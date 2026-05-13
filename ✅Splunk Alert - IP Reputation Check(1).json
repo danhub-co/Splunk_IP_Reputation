@@ -1,0 +1,402 @@
+{
+  "name": "✅Splunk Alert - IP Reputation Check",
+  "nodes": [
+    {
+      "parameters": {
+        "html": "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n  <meta charset=\"UTF-8\">\n  <title>Threat Intelligence Summary</title>\n  <style>\n    body {\n      font-family: \"Segoe UI\", sans-serif;\n      background-color: #121212;\n      color: #f0f0f0;\n      padding: 20px;\n    }\n    .container {\n      display: flex;\n      gap: 20px;\n      flex-wrap: wrap;\n    }\n    .card {\n      background-color: #1e1e1e;\n      border-radius: 12px;\n      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.6);\n      padding: 20px;\n      width: 100%;\n      max-width: 500px;\n      border: 1px solid #333;\n    }\n    h1 {\n      color: #00bfff;\n    }\n    h2 {\n      margin-top: 0;\n      color: #4fc3f7;\n    }\n    .section-title {\n      font-weight: bold;\n      margin-top: 15px;\n      color: #90caf9;\n    }\n    .label {\n      font-weight: bold;\n      color: #c5e1a5;\n    }\n    ul {\n      margin-top: 5px;\n      padding-left: 20px;\n    }\n    li {\n      margin-bottom: 4px;\n    }\n    .tag {\n      background-color: #333;\n      color: #c5cae9;\n      border-radius: 5px;\n      padding: 2px 6px;\n      margin-right: 5px;\n      display: inline-block;\n    }\n    a {\n      color: #81d4fa;\n      text-decoration: none;\n    }\n    a:hover {\n      text-decoration: underline;\n    }\n    .status {\n      margin-top: 10px;\n      margin-bottom: 10px;\n      font-weight: bold;\n      padding: 8px 16px;\n      border-radius: 8px;\n      display: inline-block;\n    }\n    .safe {\n      background-color: #2e7d32;\n      color: #a5d6a7;\n    }\n    .suspicious {\n      background-color: #c62828;\n      color: #ffab91;\n    }\n  </style>\n</head>\n<body>\n  <h1>IP Threat Summary</h1>\n  <p><span class=\"label\">IP:</span> {{ $json.summary.VirusTotal.IP }}</p>\n  \n  <p><span class=\"label\">Description:</span> {{ $json.summary.VirusTotal.Description }}</p>\n  \n  <div class=\"status {{ $json.summary.Status === 'Safe' ? 'safe' : 'suspicious' }}\">\n    {{ $json.summary.Status }}\n  </div>\n\n  <div class=\"container\">\n    <!-- VirusTotal Section -->\n    <div class=\"card\">\n      <h2>VirusTotal</h2>\n      <p><span class=\"label\">Reputation:</span> {{ $json.summary.VirusTotal.Reputation }}</p>\n      <p><span class=\"label\">WHOIS:</span> {{ $json.summary.VirusTotal.Whois }}</p>\n      <p><span class=\"label\">Tags:</span> {{ $json.summary.VirusTotal.Tags_HTML }}</p>\n      <p class=\"section-title\">Analysis Stats</p>\n      <ul>\n        <li>Harmless: {{ $json.summary.VirusTotal.Harmless }}</li>\n        <li>Malicious: {{ $json.summary.VirusTotal.Malicious }}</li>\n        <li>Suspicious: {{ $json.summary.VirusTotal.Suspicious }}</li>\n        <li>Undetected: {{ $json.summary.VirusTotal.Undetected }}</li>\n      </ul>\n    </div>\n\n    <!-- AlienVault Section -->\n    <div class=\"card\">\n      <h2>AlienVault</h2>\n      <p><span class=\"label\">Reputation:</span> {{ $json.summary.AlienVault.Reputation }}</p>\n      <p><span class=\"label\">WHOIS:</span> \n          <a href=\"{{ $json.summary.AlienVault.Whois }}\" target=\"_blank\">View WHOIS</a>\n      </p>\n      <p><span class=\"label\">Pulse Count:</span> {{ $json.summary.AlienVault.Pulse_Count }}</p>\n      <p class=\"section-title\">Pulse Names</p>\n      <div>\n        {{ $json.summary.AlienVault.Pulse_Names.split(',').map(name => `<span class=\"tag\">${name.trim()}</span>`).join('') }}\n      </div>\n    </div>\n\n    <p style=\"margin-top: 5px;\">Generated at: {{ $json.summary.Generated_At }}</p>\n  </div>\n</body>\n</html>\n"
+      },
+      "id": "94a58bfe-25b3-4833-926f-833d7ab3acf7",
+      "name": "IP summary display",
+      "type": "n8n-nodes-base.html",
+      "position": [
+        -336,
+        96
+      ],
+      "typeVersion": 1.2
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json.body;\n\nconst ip = body?.result?.src_ip || 'No IP found';\nconst reason = body?.result?.reason || 'No reason found';\n\nreturn [\n  {\n    json: {\n      ip_address: ip,\n      description: reason\n    }\n  }\n];\n"
+      },
+      "id": "3e7224d5-7a21-4c29-9142-8b1d9e6e5ffc",
+      "name": "Extract IOCs",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        -1456,
+        192
+      ],
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "numberInputs": 3
+      },
+      "id": "59883002-b527-4f70-bd57-cc454553b375",
+      "name": "Merge Threat Data",
+      "type": "n8n-nodes-base.merge",
+      "position": [
+        -1008,
+        176
+      ],
+      "typeVersion": 3.2,
+      "alwaysOutputData": false
+    },
+    {
+      "parameters": {
+        "jsCode": "let virustotal = null;\nlet alienvault = null;\nlet metadata = null;\n\nfor (const item of items) {\n  if (item.json?.data?.attributes) {\n    // Likely VirusTotal result\n    virustotal = item.json;\n  } else if (item.json?.pulse_info) {\n    // Likely AlienVault result\n    alienvault = item.json;\n  } else if (item.json?.description) {\n    // The Wazuh description or IP metadata\n    metadata = item.json;\n  }\n}\n\nreturn [{\n  json: {\n    virustotal,\n    alienvault,\n    description: metadata?.description || \"No description\",\n    ip_address: metadata?.ip_address || virustotal?.data?.id || \"Unknown IP\"\n  }\n}];\n"
+      },
+      "id": "3355f3a1-fff5-42ac-9c72-5c2b961e17dd",
+      "name": "Process Intel Data",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        -784,
+        192
+      ],
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get merged input (single item array)\nconst data = items[0].json;\n\n// VirusTotal extraction\nconst vt = data.virustotal?.data?.attributes;\nconst vtTagsArray = vt?.tags || [];\n\nconst malicious = vt?.last_analysis_stats?.malicious || 0;\nconst suspicious = vt?.last_analysis_stats?.suspicious || 0;\n\nconst vtSummary = vt ? {\n  IP: data.virustotal.data.id,\n  Reputation: vt.reputation,\n  Tags: vtTagsArray.join(', '),\n  Tags_HTML: vtTagsArray.map(tag =>\n    `<span class=\"tag\">${tag.trim()}</span>`\n  ).join(''),\n  Harmless: vt.last_analysis_stats?.harmless || 0,\n  Malicious: malicious,\n  Suspicious: suspicious,\n  Undetected: vt.last_analysis_stats?.undetected || 0,\n  Whois: vt.whois?.split(\"\\n\")[0] || \"No WHOIS info\",\n  Description: data.description || \"No description\"\n} : {};\n\n// AlienVault extraction with fallback\nlet avSummary = {};\nlet isAlienVaultSuspicious = false;\n\nif (data.alienvault && data.alienvault.pulse_info) {\n  const av = data.alienvault;\n  const pulseNamesArray = (av?.pulse_info?.pulses || []).map(p => p.name);\n  const pulseCount = av?.pulse_info?.count || 0;\n\n  isAlienVaultSuspicious = pulseCount > 0;\n\n  avSummary = {\n    IP: av.indicator,\n    Reputation: av.reputation,\n    Whois: av.whois,\n    Pulse_Count: pulseCount,\n    Pulse_Names: pulseNamesArray.join(', '),\n    Pulse_Names_HTML: pulseNamesArray.map(name =>\n      `<span class=\"tag\">${name.trim()}</span>`\n    ).join('')\n  };\n} else {\n  avSummary = {\n    IP: 'N/A (Private IP)',\n    Reputation: 'N/A',\n    Whois: 'N/A',\n    Pulse_Count: 0,\n    Pulse_Names: 'N/A',\n    Pulse_Names_HTML: ''\n  };\n}\n\n// Global Status Logic\nconst isVirusTotalSuspicious = malicious > 0 || suspicious > 0;\nconst finalStatus = (isVirusTotalSuspicious || isAlienVaultSuspicious) ? 'Suspicious' : 'Safe';\n\n// Timestamp\nconst generatedAt = new Intl.DateTimeFormat('en-IN', {\n  dateStyle: 'short',\n  timeStyle: 'medium',\n  timeZone: 'Asia/Kolkata'\n}).format(new Date());\n\n// Final Output\nreturn [\n  {\n    json: {\n      summary: {\n        VirusTotal: vtSummary,\n        AlienVault: avSummary,\n        Status: finalStatus,\n        Generated_At: generatedAt\n      }\n    }\n  }\n];\n"
+      },
+      "id": "6a15280a-8b65-4649-bdab-96280982da29",
+      "name": "Generate IP Summary",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        -560,
+        192
+      ],
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "id": "559feb80-bac9-4300-82ac-7fbec9c24320",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "leftValue": "={{ $json.summary.Status }}",
+                    "rightValue": "Suspicious"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "16ea9375-f3ee-483c-bca5-77289c61b6d1",
+      "name": "Filter Suspicious IPs",
+      "type": "n8n-nodes-base.switch",
+      "position": [
+        -336,
+        288
+      ],
+      "typeVersion": 3.2
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "C0B23UX2T32",
+          "mode": "list",
+          "cachedResultName": "all-nedproject"
+        },
+        "text": "=",
+        "otherOptions": {}
+      },
+      "id": "f425e384-33eb-48e2-8416-77665241ac3c",
+      "name": "Slack IP Alert",
+      "type": "n8n-nodes-base.slack",
+      "position": [
+        -112,
+        288
+      ],
+      "webhookId": "c246176e-5a7c-4223-9c41-196ed03ceaa2",
+      "typeVersion": 2.3,
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "itub6AVdGPcXsyiQ",
+          "name": "Slack OAuth2 API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "user@example.com",
+        "subject": "[New Alert] IP Reputation Check Summary",
+        "message": "={{ $json.html }}",
+        "options": {}
+      },
+      "id": "26b9aa1a-b1a4-4566-8405-c3b0202f9bf7",
+      "name": "Gmail",
+      "type": "n8n-nodes-base.gmail",
+      "position": [
+        -112,
+        96
+      ],
+      "webhookId": "a0b9d4ee-ac9f-46e1-a9de-b81395a03636",
+      "typeVersion": 2.1,
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "oudWQuQp7ZrTRDDT",
+          "name": "Gmail OAuth2 API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "e645d98e-f80c-47e5-b96e-762c96f3db76",
+        "options": {}
+      },
+      "id": "2f348cdd-f8ed-46e6-9cc7-19677694ec78",
+      "name": "Splunk Alert",
+      "type": "n8n-nodes-base.webhook",
+      "position": [
+        -1680,
+        192
+      ],
+      "webhookId": "7bd84c22-c32f-47f7-ad8d-d09602b7751d",
+      "typeVersion": 2,
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "content": "## 📥 Alert Ingestion & IOC Extraction\n- Receives alert from Splunk with IP address.\n- Extracts source IP and event reason.\n- Sends it to VirusTotal, AlienVault, and Merge nodes.\n",
+        "height": 180,
+        "width": 340
+      },
+      "id": "adba1af8-8f2c-4cce-ac84-8f97c665cf0b",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -1824,
+        -32
+      ],
+      "typeVersion": 1
+    },
+    {
+      "parameters": {
+        "content": "## 🧪 Threat Enrichment & Summary Generation\n- Queries VirusTotal and AlienVault for reputation.\n- Merges data, tags, WHOIS, and pulse info.\n- Creates a readable summary of threat posture.\n",
+        "height": 140,
+        "width": 600,
+        "color": 3
+      },
+      "id": "9f3215f0-e033-4b34-8721-38b8d08c0db1",
+      "name": "Sticky Note1",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -1024,
+        384
+      ],
+      "typeVersion": 1
+    },
+    {
+      "parameters": {
+        "content": "## 🚨 Alert Routing & Analyst Notification\n- If IP is marked suspicious:\n  - Sends Slack alert\n  - Creates an incident ticket\n- Emails an HTML summary report to the SOC inbox.\n",
+        "height": 168,
+        "width": 340
+      },
+      "id": "63b04f4f-75d0-46da-9863-56e6a6fc8906",
+      "name": "Sticky Note2",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        112,
+        80
+      ],
+      "typeVersion": 1
+    },
+    {
+      "parameters": {
+        "url": "=https://www.virustotal.com/api/v3/ip_addresses/{{ $json.ip_address }}\n",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "virusTotalApi",
+        "options": {}
+      },
+      "id": "1f893db8-e5c4-45db-9e0b-2779c0b7aecd",
+      "name": "VirusTotal IP reputation check",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1232,
+        48
+      ],
+      "credentials": {
+        "virusTotalApi": {
+          "id": "wezlz2LZUett9r0y",
+          "name": "VirusTotal account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://otx.alienvault.com/api/v1/indicators/IPv4/{{ $json.ip_address }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "alienVaultApi",
+        "options": {}
+      },
+      "id": "a290631d-b2b7-4e94-bdf4-936fa519e322",
+      "name": "AlienVault Lookup",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1232,
+        336
+      ],
+      "credentials": {
+        "alienVaultApi": {
+          "id": "EzS3VV5S5yzYzUPS",
+          "name": "AlienVault account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Extract IOCs": {
+      "main": [
+        [
+          {
+            "node": "Merge Threat Data",
+            "type": "main",
+            "index": 1
+          },
+          {
+            "node": "VirusTotal IP reputation check",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "AlienVault Lookup",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Splunk Alert": {
+      "main": [
+        [
+          {
+            "node": "Extract IOCs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Threat Data": {
+      "main": [
+        [
+          {
+            "node": "Process Intel Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IP summary display": {
+      "main": [
+        [
+          {
+            "node": "Gmail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Intel Data": {
+      "main": [
+        [
+          {
+            "node": "Generate IP Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate IP Summary": {
+      "main": [
+        [
+          {
+            "node": "IP summary display",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Filter Suspicious IPs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Suspicious IPs": {
+      "main": [
+        [
+          {
+            "node": "Slack IP Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "VirusTotal IP reputation check": {
+      "main": [
+        [
+          {
+            "node": "Merge Threat Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AlienVault Lookup": {
+      "main": [
+        [
+          {
+            "node": "Merge Threat Data",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "timeSavedMode": "fixed",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "versionId": "b061292c-737b-4eb3-b83f-0469fa6c3d9e",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "dfb4c67c6f83ce8073a2950368e1a9fa8185a8d79f8fe0befa65aa8abc945f1a"
+  },
+  "id": "vb83IS3ZWTnrqOwE",
+  "tags": []
+}
