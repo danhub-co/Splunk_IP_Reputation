@@ -137,7 +137,7 @@
     },
     {
       "parameters": {
-        "sendTo": "user@example.com",
+        "sendTo": "testingpacket@gmail.com",
         "subject": "[New Alert] IP Reputation Check Summary",
         "message": "={{ $json.html }}",
         "options": {}
