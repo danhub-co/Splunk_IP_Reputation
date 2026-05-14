@@ -1,0 +1,11 @@
+{
+  "name": "Splunk IP Threat Intelligence Workflow",
+  "nodes": [],
+  "connections": {},
+  "settings": {},
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2026-05-14T12:24:28.789Z",
+  "versionId": "1.0.0"
+}
